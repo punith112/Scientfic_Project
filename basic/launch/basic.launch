@@ -1,0 +1,5 @@
+<launch>
+<!-- My Package launch file -->
+<node pkg="basic" type="basic.py" name="basic" output="screen">
+</node>
+</launch>

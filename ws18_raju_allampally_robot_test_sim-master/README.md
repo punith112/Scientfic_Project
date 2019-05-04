@@ -20,10 +20,7 @@
 - E.g. in the object recognition repository list the kinect2 node
 
 ## Authors
-- Benjamin Stähle - Main Contributor (docker) - @staehlbe
-- Malte Liam Jakob - Main Contributor (docker) - @mj-183041
-- Rakesh Allampally - Main Contributor - @ra-171967
-- Punith Raju - Main Contributor - @pr-171989 
+Punith Raju - Main Contributor - @pr-171989 
 
 ## License
 To be determined.

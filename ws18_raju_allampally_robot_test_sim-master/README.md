@@ -6,11 +6,6 @@
 - Build the docker container and start it with the docker-compose yaml
 - Currently docker is to be composed
 
-## External dependencies
-- 
-- 
-- 
-
 ## Build dependencies
 - Link to Dockerfile is sufficient
 - If there is no Dockerfile, list the dependencies here

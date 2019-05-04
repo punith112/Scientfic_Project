@@ -1,12 +1,15 @@
-# Scientfic Project Master's
-
-## Automated_Testing
+# Automated_Testing
 - Repository for Updated Marvin With Omni_Directional and Moveit and SLAM Navigation Package 
 - Teleoperating,Testing Robot,SLAM
 
 ## Getting started
 - Build the docker container and start it with the docker-compose yaml
 - Currently docker is to be composed
+
+## External dependencies
+- 
+- 
+- 
 
 ## Build dependencies
 - Link to Dockerfile is sufficient
@@ -17,6 +20,9 @@
 - E.g. in the object recognition repository list the kinect2 node
 
 ## Authors
+- Benjamin Stähle - Main Contributor (docker) - @staehlbe
+- Malte Liam Jakob - Main Contributor (docker) - @mj-183041
+- Rakesh Allampally - Main Contributor - @ra-171967
 - Punith Raju - Main Contributor - @pr-171989 
 
 ## License

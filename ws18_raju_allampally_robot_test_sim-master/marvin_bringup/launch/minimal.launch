@@ -1,0 +1,34 @@
+<launch>
+  <arg name="sec_idle" default="1.0" />
+  <arg name="use_base_odom" default="true" />
+  <arg name="use_dummy" default="false" />  <!-- running dummy dynamixel motor controller manager, it does not requries gazebo -->
+  <arg name="use_urg_node" default="true" />
+  <arg name="use_dynamixel_controller" default="true" />
+  <arg name="visualize_laser" default="false" />
+
+  <!-- Debug Info -->
+  <arg name="debug" default="false" />
+
+  <!-- load robot_description -->
+  <arg name="model" value="$(find marvin_sim)/urdf/marvin.urdf.xacro"  />
+  <param name="robot_description" command="$(find xacro)/xacro.py $(arg model) visualize_laser:=$(arg visualize_laser)" />
+
+  <!-- Base controller, hardware -->
+  <include file="$(find marvin_controller)/launch/marvin_controller.launch">
+    <arg name="sec_idle" value="$(arg sec_idle)" />
+    <arg name="use_base_odom" value="$(arg use_base_odom)" />
+    <arg name="debug" value="false" />
+    <arg name="use_dummy" value="$(arg use_dummy)" />
+    <arg name="use_dynamixel_controller" value="$(arg use_dynamixel_controller)" />
+  </include>
+
+  <group if="$(arg use_urg_node)" >
+    <node name="urg" pkg="urg_node" type="urg_node">
+      <remap from="/scan" to="/marvin/laser/scan" />
+      <param name="frame_id" value="hokuyo_sensor_link" />
+      <param name="angle_min" value="-2.0944" />
+      <param name="angle_max" value="2.0944" />
+    </node>
+  </group>
+  <include file="$(find marvin_bringup)/launch/laser_filter.launch" />
+</launch>

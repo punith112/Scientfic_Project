@@ -1,0 +1,8 @@
+# Define the goal
+float64 input  # Specify the movement of Actuator
+---
+# Define the result
+float64 output # Specify the 
+---
+# Define a feedback message
+float64 data

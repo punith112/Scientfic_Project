@@ -1,0 +1,2222 @@
+<?xml version="1.0"?>
+<robot name="spur"
+       xmlns:sensor="http://playerstage.sourceforge.net/gazebo/xmlschema/#sensor"
+       xmlns:controller="http://playerstage.sourceforge.net/gazebo/xmlschema/#controller"
+       xmlns:interface="http://playerstage.sourceforge.net/gazebo/xmlschema/#interface"
+       xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:property name="ns" value="spur" />
+
+  <!-- include materials -->
+  <xacro:include filename="$(find spur_description)/urdf/materials.urdf.xacro" />
+  <xacro:include filename="$(find spur_description)/urdf/spur.gazebo.xacro" />
+  <xacro:include filename = "$(find marvin_description)/urdf/d46.urdf.xacro"/>
+
+  <!-- constants -->
+  <property name="M_PI" value="3.1415926535897931" />
+
+  <property name="wheel_radius" value="0.089" />
+  <property name="wheel_width" value="0.034" />
+
+  <property name="base_width" value="0.30" />
+  <property name="base_height" value="0.030" />
+  <property name="caster_offset_x" value="0.185" />
+  <property name="caster_offset_y" value="0.235" />
+  <property name="caster_offset_z" value="0.14" />
+
+  <!-- Hokuyo https://www.hokuyo-aut.jp/02sensor/07scanner/urg_04lx.html -->
+  <property name="hokuyo_length" value="0.07" />
+  <property name="hokuyo_radius" value="0.043" /> <!-- Because max surface area of Hokuyo laser is not cylindrical, this isn't accurate, which shouldn't matter. -->
+
+  <property name="mx160_effort" value="8.3" /> <!--  8.3 N/m ?? 45rpm -> 4.71 rad/s-->
+  <property name="mx160_velocity" value="4.71" />
+  <!-- inertia -->
+  <macro name="cylinder_inertia" params="m r h">
+    <inertia  ixx="${m*(3*r*r+h*h)/12}" ixy = "0" ixz = "0"
+              iyy="${m*(3*r*r+h*h)/12}" iyz = "0" izz="${m*r*r/2}" />
+  </macro>
+
+  <macro name="box_inertia" params="m x y z">
+    <inertia  ixx="${m*(y*y+z*z)/12}" ixy = "0" ixz = "0"
+              iyy="${m*(z*z+x*x)/12}" iyz = "0" izz="${m*(x*x+y*y)/12}" />
+  </macro>
+  <!-- wheel -->
+  <xacro:macro name="odom_wheel_tire" params="parent suffix offset">
+
+    <joint name="${parent}_wheel_tire_${suffix}" type="fixed">
+      <origin xyz="0 0 ${offset}" rpy="0 0 0" />
+      <parent link="${parent}_wheel_link" />
+      <child link="${parent}_wheel_tire_${suffix}_link" />
+    </joint>
+
+    <link name="${parent}_wheel_tire_${suffix}_link">
+      <inertial>
+        <mass value="1.736541" />
+        <origin xyz="0 0 -0.1" />
+        <cylinder_inertia m="3.473082" r="${wheel_radius}" h="${wheel_width}" />
+      </inertial>
+      <visual>
+        <geometry>
+          <cylinder length="${wheel_width}" radius="${wheel_radius}"/>
+        </geometry>
+        <material name="DarkGrey" />
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder length="${wheel_width}" radius="${wheel_radius}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <xacro:gazebo_tire_link name="${parent}_wheel_tire_${suffix}_link"  color="Black" />
+
+  </xacro:macro>
+
+  <xacro:macro name="odom_wheel_schaft" params="suffix rot_axis">
+
+    <joint name="${suffix}_wheel_joint" type="continuous">
+      <axis xyz="0 0 ${rot_axis}" />
+      <limit effort="${mx160_effort*500}" velocity="${mx160_velocity*500}"/>
+      <dynamics damping="0.0" friction="0.0" />
+      <origin xyz="0 0 -${caster_offset_z}" rpy="-${M_PI/2} 0 0" />
+       <!-- Edit the Following above is the main refrence for the Vertical rotating to wheel-Horizontal link -->
+      <parent link="${suffix}_rotation_link" />
+      <child link="${suffix}_wheel_link" />
+    </joint>
+
+    <xacro:simple_transmission name="${suffix}_wheel_joint" interface="EffortJointInterface" />
+
+    <link name="${suffix}_wheel_link">
+      <inertial>
+        <mass value="5.0" />
+        <origin xyz="0 0 0" />
+        <cylinder_inertia m="5.0" r="0.02" h="0.100" />
+      </inertial>
+      <visual>
+        <geometry>
+          <cylinder length="0.100" radius="0.02"/>
+        </geometry>
+        <material name="Grey" />
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder length="${0.100 - wheel_width*2 - 0.01}" radius="0.02"/> <!-- avoid collision to tire -->
+        </geometry>
+      </collision>
+    </link>
+
+    <xacro:gazebo_tire_link name="${suffix}_wheel_link"  color="Grey" />
+
+  </xacro:macro>
+
+  <xacro:macro name="odom_wheel_rotate" params="suffix">
+    <joint name="${suffix}_rotation_joint" type="revolute">
+      <axis xyz="0 0 -1" />
+      <limit lower="${-90*M_PI/180.0}" upper="${90*M_PI/180.0}" effort="${mx160_effort}" velocity="${mx160_velocity}"/>
+      <dynamics damping="0.0" friction="0.0" />
+      <xacro:insert_block name="origin" />
+      <!-- Edit the Following above is the main refrence for the Vertical rotating to base_link link and although the following is child link under gravity it lies as stack -->
+      <parent link="dummy_base_link"/>
+      <child link="${suffix}_rotation_link" />
+    </joint>
+
+    <xacro:simple_transmission name="${suffix}_rotation_joint" interface="EffortJointInterface" />
+<!-- The Origin Block lies here inside the following link which should be optimised -->
+    <link name="${suffix}_rotation_link">
+      <inertial>
+        <mass value="1.0" />
+        <origin xyz="0 0 -${caster_offset_z/2}" rpy="0 0 0" />
+        <cylinder_inertia m="1.0" r="0.015" h="${caster_offset_z}" />
+      </inertial>
+      <visual>
+        <origin xyz="0 0 -${caster_offset_z/2}" rpy="0 0 0" />
+        <geometry>
+          <cylinder length="${caster_offset_z}" radius="0.015"/>
+        </geometry>
+        <material name="LightGrey" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 -${caster_offset_z/2}" rpy="0 0 0" />
+        <geometry>
+          <cylinder length="${caster_offset_z-0.05}" radius="0.015"/> <!-- avoid collision for wheel_schaft radius(0.02) -->
+        </geometry>
+      </collision>
+    </link>
+
+    <xacro:gazebo_base_link name="${suffix}_rotation_link"  color="White" />
+
+  </xacro:macro>
+
+  <xacro:macro name="odom_wheel" params="suffix *origin rot_axis">
+
+    <xacro:odom_wheel_rotate suffix="${suffix}" />
+    <xacro:odom_wheel_schaft suffix="${suffix}" rot_axis="${rot_axis}" />
+    <xacro:odom_wheel_tire parent="${suffix}" suffix="l" offset="${0.05-wheel_width/2}"  />
+    <xacro:odom_wheel_tire parent="${suffix}" suffix="r" offset="-${0.05-wheel_width/2}" />
+
+  </xacro:macro>
+
+  <!-- arm -->
+  <!-- <xacro:macro name="mx_106_link" params="name *origin">
+
+    <link name="${name}">
+      <inertial>
+        <xacro:insert_block name="origin" />
+        <mass value="0.153" />
+        <box_inertia m="0.153" x="0.029" y="0.0595" z="0.046" />
+      </inertial>
+      <visual>
+        <xacro:insert_block name="origin" />
+        <geometry>
+          <box size="0.029 0.0595 0.046" />
+        </geometry>
+        <material name="DarkGrey" />
+      </visual>
+      <collision>
+        <xacro:insert_block name="origin" />
+        <geometry>
+          <box size="${0.029-0.01} ${0.0595-0.01} ${0.046-0.01}" />
+        </geometry>
+      </collision>
+    </link>
+
+    <xacro:gazebo_arm_link name="${name}"  color="Black" />
+
+  </xacro:macro>
+
+  <xacro:macro name="arm_link_element" params="name length offset" >
+    <link name="${name}">
+      <inertial>
+        <origin xyz="-${length/2 - 0.0145} 0 ${offset}" />
+        <mass value="0.1" />
+        <box_inertia m="0.1" x="${length-0.1}" y="0.029" z="0.005" />
+      </inertial>
+      <visual>
+        <origin xyz="-${length/2 - 0.0145} 0 ${offset}" />
+        <geometry>
+          <box size="${length} 0.029 0.005" />
+        </geometry>
+        <material name="LightGrey" />
+      </visual>
+      <collision>
+        <origin xyz="-${length/2 - 0.0145} 0 ${offset}"/>
+        <geometry>
+          <box size="${length-0.1} 0.029 0.005" />
+        </geometry>
+      </collision>
+
+      <xacro:gazebo_arm_link name="${name}"  color="White" />
+
+    </link>
+  </xacro:macro> -->
+<!--
+  <xacro:macro name="arm_link_body" params="name length *origin" >
+    <xacro:arm_link_element name="${name}_body_1" length="${length}" offset="0.023"/>
+    <xacro:arm_link_element name="${name}_body_2" length="${length}" offset="-0.023"/>
+    <joint name="${name}_body_fixed" type="fixed">
+      <xacro:insert_block name="origin" />
+      <parent link="${name}_link" />
+      <child link="${name}_body_1" />
+    </joint>
+    <joint name="${name}_body_2_fixed" type="fixed">
+      <parent link="${name}_body_1" />
+      <child link="${name}_body_2" />
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="arm_joint" params="parent name joint_origin_xyz joint_origin_rpy">
+
+    <joint name="${name}_joint" type="revolute">
+      <axis xyz="0 0 1" />
+      <origin xyz="${joint_origin_xyz}" rpy="${joint_origin_rpy}" />
+      <parent link="${parent}"/>
+      <child link="${name}_link" />
+      <limit lower="${-90*M_PI/180.0}" upper="${90*M_PI/180.0}" effort="${mx160_effort}" velocity="${mx160_velocity}" />
+    </joint>
+
+    <xacro:simple_transmission name="${name}_joint" interface="EffortJointInterface" />
+
+  </xacro:macro>
+
+  <xacro:macro name="arm_link" params="parent name joint_origin_xyz joint_origin_rpy
+                                       link_origin_xyz link_origin_rpy" >
+    <xacro:arm_joint parent="${parent}" name="${name}"
+                     joint_origin_xyz="${joint_origin_xyz}"
+                     joint_origin_rpy="${joint_origin_rpy}" />
+    <xacro:mx_106_link name="${name}_link" >
+      <origin xyz="${link_origin_xyz}" rpy="${link_origin_rpy}" />
+    </xacro:mx_106_link>
+
+    <xacro:gazebo_base_link name="${name}_link"  color="Black" />
+
+  </xacro:macro>
+
+  <xacro:macro name="arm_links" params="prefix reflect" > -->
+
+    <!-- <joint name="${prefix}_base_joint" type="fixed">
+      <origin xyz="0 ${reflect * -0.15} 0.7" rpy="${M_PI/2} 0 0" />
+      <parent link="base_link"/>
+      <child link="${prefix}_base_link" />
+    </joint> -->
+
+    <!-- <xacro:mx_106_link name="${prefix}_base_link" >
+      <origin xyz="0 0.01525 0" rpy="0 0 0" />
+    </xacro:mx_106_link> -->
+<!--
+    <xacro:arm_link parent="${prefix}_base_link"
+                    name="${prefix}_shoulder_p"
+                    joint_origin_xyz="0 0 0" joint_origin_rpy="0 0 0"
+                    link_origin_xyz="0 0 ${reflect * (0.1 - 0.01525)}"
+                    link_origin_rpy="${M_PI/2} 0 ${M_PI/2}" />
+    <xacro:arm_link parent="${prefix}_shoulder_p_link"
+                    name="${prefix}_shoulder_r"
+                    joint_origin_xyz="0 0 ${reflect * 0.1}"
+                    joint_origin_rpy="0 ${M_PI/2} 0"
+                    link_origin_xyz="0 -0.05 0"
+                    link_origin_rpy="${M_PI/2} 0 0" />
+    <xacro:arm_link parent="${prefix}_shoulder_r_link"
+                    name="${prefix}_shoulder_y"
+                    joint_origin_xyz="0 -0.1 0.0"
+                    joint_origin_rpy="${M_PI/2} 0 0"
+                    link_origin_xyz="0 0 ${0.2 - 0.01515}"
+                    link_origin_rpy="${M_PI/2} 0 ${M_PI/2}" />
+    <xacro:arm_link parent="${prefix}_shoulder_y_link"
+                    name="${prefix}_elbow_p"
+                    joint_origin_xyz="0 0 0.2" joint_origin_rpy="0 ${M_PI/2} 0"
+                    link_origin_xyz="-${0.2 - 0.01525} 0 0"
+                    link_origin_rpy="0 0 ${M_PI/2}" />
+    <xacro:arm_link parent="${prefix}_elbow_p_link"
+                    name="${prefix}_wrist_p"
+                    joint_origin_xyz="-0.2 0 0" joint_origin_rpy="0 0
+                                                                  0"
+                    link_origin_xyz="-0.05 0 0"
+                    link_origin_rpy="${M_PI/2} ${M_PI/2} 0" />
+    <xacro:arm_joint parent="${prefix}_wrist_p_link"
+                     name="${prefix}_wrist_r"
+                     joint_origin_xyz="-0.05 0.03 0"
+                     joint_origin_rpy="-${M_PI/2} -${M_PI/2} 0" />
+    <link name="${prefix}_wrist_r_link" >
+      <inertial>
+        <origin xyz="0 0 0" />
+        <mass value="0.001" />
+        <inertia  ixx="${(0.001/2*0.001/2+0.001/2*0.001/2)/3*0.001}"
+                  ixy="0.0" ixz="0.0"
+                  iyy="${(0.001/2*0.001/2+0.001/2*0.001/2)/3*0.001}"
+                  iyz="0.0"
+                  izz="${(0.001/2*0.001/2+0.001/2*0.001/2)/3*0.001}"
+                  />
+      </inertial>
+      <visual>
+        <geometry>
+          <box size="0.02 0.02 0.02" />
+        </geometry>
+        <material name="DarkGrey" />
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.12 0.01 0.01" />
+        </geometry>
+      </collision>
+    </link>
+    <xacro:gazebo_arm_link name="${prefix}_wrist_r_link" color="Black" />
+
+    <xacro:arm_link_body name="${prefix}_elbow_p" length="0.2" >
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </xacro:arm_link_body>
+    <xacro:arm_link_body name="${prefix}_shoulder_y" length="0.2" >
+      <origin xyz="0 0 -0.02" rpy="0 ${M_PI/2} 0" />
+    </xacro:arm_link_body>
+
+  </xacro:macro> -->
+  <joint name="dummy_to_base_link" type="fixed" >
+    <origin xyz="0 0 -0.19" rpy="0 0 0" />
+    <parent link="dummy_base_link"/>
+    <child link="base_link" />
+  </joint>
+
+  <link name="dummy_base_link">
+    <inertial>
+      <mass value="116.0" />
+      <origin xyz="0 0 0" />
+      <box_inertia m="116.0" x="0.62" y="0.48" z="0.17" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.1" rpy="0 0 0" />
+      <geometry>
+        <box size="0.62 0.48 0.17" />
+      </geometry>
+      <material name="DarkGrey" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.1" rpy="0 0 0" />
+      <geometry>
+        <box size="0.62 0.48 0.17" />
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- base -->
+  <link name="base_link">
+    <inertial>
+      <mass value="0.05" />
+      <origin xyz="0 0 0" />
+      <box_inertia m="0.5" x="0.02" y="0.08" z="0.07" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.27" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="DarkGrey" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.27" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+    </collision>
+  </link>
+
+
+  <xacro:gazebo_base_link name="base_link"  color="Black" />
+
+  <!-- <link name="base_footprint" /> -->
+  <link name="base_footprint">
+    <inertial>
+      <mass value="0.05" />
+      <origin xyz="0 0 0" />
+      <box_inertia m="0.5" x="0.02" y="0.08" z="0.07" />
+      </inertial>
+    <visual>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <geometry>
+      <box size="0.01 0.01 0.01"/>
+    </geometry>
+    <material name="Red"/>
+  </visual>
+  <collision>
+    <origin rpy="0 0 0" xyz="0 0 0.1"/>
+    <geometry>
+      <box size="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+  <joint name="footprint_to_base" type="fixed" >
+    <origin xyz="0 0 -0.22" rpy="0 0 0" />
+    <parent link="dummy_base_link"/>
+    <child link="base_footprint" />
+  </joint>
+
+  odom base
+  <xacro:odom_wheel suffix="fl" rot_axis="1">
+    <origin xyz="${caster_offset_x} ${caster_offset_y} 0.0" rpy="0 0 0" />
+  </xacro:odom_wheel>
+  <xacro:odom_wheel suffix="fr" rot_axis="-1">
+    <origin xyz="${caster_offset_x} -${caster_offset_y} 0.0" rpy="0 0 0" />
+  </xacro:odom_wheel>
+  <xacro:odom_wheel suffix="bl" rot_axis="1">
+    <origin xyz="-${caster_offset_x} ${caster_offset_y} 0.0" rpy="0 0 0" />
+  </xacro:odom_wheel>
+  <xacro:odom_wheel suffix="br" rot_axis="-1">
+    <origin xyz="-${caster_offset_x} -${caster_offset_y} 0.0" rpy="0 0 0" />
+  </xacro:odom_wheel>
+
+  <!-- URG -->
+  <!-- http://answers.ros.org/question/44691/how-to-put-hokuyo-laser-sensor-on-p2os/?answer=44785#post-id-44785   -->
+  <!-- <link name="hokuyo_sensor_link" type="laser">
+    <inertial>
+      <mass value="0.160" />
+      <origin xyz="0 0 0.0" />
+      <box_inertia m="0.160" x="0.05" y="0.05" z="0.05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://gazebo_plugins/test/multi_robot_scenario/meshes/laser/hokuyo.dae"/>
+      </geometry>
+     </visual>
+     <collision>
+       <origin xyz="0 0 0.0" />
+       <geometry>
+         <box size="0.05 0.05 0.07" />
+       </geometry>
+     </collision>
+  </link> -->
+  <!-- <joint name="laser_to_base" type="fixed">
+    <origin xyz="${caster_offset_x} 0 -0.05" rpy="3.14 0 0" />
+    <parent link="base_link" />
+    <child link="hokuyo_sensor_link"/>
+  </joint> -->
+
+  <!-- arm -->
+  <!-- <xacro:arm_links prefix="rarm" reflect="1" />
+  <xacro:arm_links prefix="larm" reflect="-1" /> -->
+
+  <!-- body -->
+  <!-- <link name="body">
+    <inertial>
+      <mass value="10.0" />
+      <origin xyz="0 0 0.25" />
+      <box_inertia m="10.0" x="0.1" y="0.2" z="0.5" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.25" />
+      <geometry>
+        <box size="0.1 0.2 0.5" />
+      </geometry>
+      <material name="LightGrey" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.25" />
+      <geometry>
+        <box size="0.1 0.2 0.5" />
+      </geometry>
+    </collision>
+  </link> -->
+
+  <!-- <xacro:gazebo_base_link name="body"  color="White" /> -->
+
+  <!-- <joint name="base_to_body" type="fixed" >
+    <origin xyz="0 0 0.30" rpy="0 0 0" />
+    <parent link="base_link"/>
+    <child link="body" />
+  </joint> -->
+
+
+
+  <!-- ** base_plate *** -->
+  <!-- ******************** -->
+  <link name="base_plate_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.62 0.48 0.015"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.64 0.5 0.035"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="5.0"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.0960937115625" ixy="0.0" ixz="0.0" iyy="0.160260352562" iyz="0.0" izz="0.2561665642"/>
+    </inertial>
+  </link>
+  <joint name="marvin_mpo700_to_base_plate_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_plate_link"/>
+    <origin xyz="0 0 0.3465"/>
+  </joint>
+  <!-- ******************** -->
+  <!-- ** Cover Bottom *** -->
+  <!-- ******************** -->
+  <joint name="base_plate_link_to_cover_bottom" type="fixed">
+    <parent link="base_plate_link"/>
+    <child link="cover_bottom"/>
+    <origin xyz="0 0 0.6"/>
+  </joint>
+  <link name="cover_bottom">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://marvin_description/meshes/marvin_cover/cover_bottom.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.9 0.9 0.9 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://marvin_description/meshes/marvin_cover/cover_bottom.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- ********************* -->
+  <!-- *** Bottle Opener *** -->
+  <!-- ********************* -->
+  <joint name="bottle_opener_joint" type="fixed">
+    <parent link="cover_bottom"/>
+    <child link="bottle_opener"/>
+    <origin rpy="0 0 -1.57079632679" xyz="0.0289 -0.16 0.2935"/>
+  </joint>
+  <link name="bottle_opener">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://marvin_description/meshes/bottle_opener/bottle_opener_merged.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0 0 0 0.8"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="package://marvin_description/meshes/bottle_opener/bottle_opener_merged.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <gazebo reference="bottle_opener">
+    <material value="Gazebo/Black" />
+     </gazebo>
+
+  <!-- ** Linear Actuator *** -->
+
+  <joint name="base_plate_linear_acutator_joint" type="fixed">
+    <parent link="base_plate_link"/>
+    <child link="linear_actuator_pole_link"/>
+    <origin rpy="0 0.01 0" xyz="0.09 0.0 0.651"/>
+  </joint>
+  <link name="linear_actuator_pole_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.082 1.287"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.102 1.307"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="5.0"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.692955139484" ixy="0.0" ixz="0.0" iyy="0.691653473338" iyz="0.0" izz="0.004301664946"/>
+    </inertial>
+  </link>
+
+
+
+  <joint name="marvin_linear_actuator_joint" type="prismatic">
+    <parent link="linear_actuator_pole_link"/>
+    <child link="sliding_mounting_plate_link"/>
+    <origin xyz="0.035 0 -0.4795"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1000" lower="0" upper="1.02" velocity="0.15" />
+  </joint>
+  <transmission name="prismatic">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="marvin_linear_actuator_joint">
+        <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="marvin_linear_actuator_joint_motor">
+		 <hardwareInterface>hardware_interface/PositionJointInterface</hardwareInterface>
+        <mechanicalReduction>1</mechanicalReduction>
+      </actuator>
+    </transmission>
+  <link name="sliding_mounting_plate_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.023 0.082 0.12"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.023 0.082 0.12"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00035206652584" ixy="0.0" ixz="0.0" iyy="0.00024881656714" iyz="0.0" izz="0.00012088328498"/>
+    </inertial>
+  </link>
+
+
+
+
+  <!-- ******************** -->
+  <!-- ** Marvin Moving Top *** -->
+  <!-- ******************** -->
+  <!-- length width height correspond to the x,y and z axes respectivly-->
+  <!-- ******************** -->
+  <!-- *** Marvin moving base plate *** -->
+  <!-- ******************** -->
+  <link name="marvin_moving_baseplate_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.015 0.05 0.14"/>
+      </geometry>
+      <material name="grey">
+        <color rgba="0.8 0.8 0.8 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.015 0.05 0.14"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.5"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.000920832965" ixy="0.0" ixz="0.0" iyy="0.00082604133625" iyz="0.0" izz="0.00011354162125"/>
+    </inertial>
+  </link>
+<joint name="platform_moving_baseplate_joint" type="fixed">
+    <parent link="sliding_mounting_plate_link"/>
+    <child link="marvin_moving_baseplate_link"/>
+    <origin xyz="0.019 0.016 0.01"/>
+  </joint>
+
+<!-- *** Marvin poles for monitor and ptu base *** -->
+
+  <joint name="marvin_pole_joint" type="fixed">
+    <parent link="marvin_moving_baseplate_link"/>
+    <child link="marvin_pole_link"/>
+    <origin xyz="0.0275 0 0.1775"/>
+  </joint>
+  <link name="marvin_pole_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.495"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.08 0.535"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="3.0"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.0616562253375" ixy="0.0" ixz="0.0" iyy="0.0616562253375" iyz="0.0" izz="0.00079999968"/>
+    </inertial>
+  </link>
+
+
+  <!-- ******************** -->
+  <!-- ** Cover Top *** -->
+  <!-- ******************** -->
+
+
+
+
+<joint name="marvin_pole_link_to_marvin_horizontal_pole_for_sensors_joint" type="fixed">
+    <parent link="marvin_pole_link"/>
+    <child link="marvin_horizontal_pole_for_sensors_link"/>
+    <origin rpy="0 0 0" xyz="0.0765 0 0.2225"/>
+  </joint>
+  <link name="marvin_horizontal_pole_for_sensors_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.113 0.04 0.04"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.113 0.04 0.04"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="5.3333312e-05" ixy="0.0" ixz="0.0" iyy="0.00023948323754" iyz="0.0" izz="0.00023948323754"/>
+    </inertial>
+  </link>
+
+<!--Monitor Link   -->
+ <joint name="marvin_horizontal_pole_for_sensors_to_monitor_joint" type="fixed">
+    <parent link="marvin_horizontal_pole_for_sensors_link"/>
+    <child link="monitor_link"/>
+    <origin rpy="0 0 0" xyz="0.073 0 -0.0825"/>
+  </joint>
+  <link name="monitor_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.033 0.25 0.205"/>
+      </geometry>
+      <material name="clear_color">
+        <color rgba="0.5 0.5 0.5 0.3"/>
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.033 0.25 0.205"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.5"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.00435520659125" ixy="0.0" ixz="0.0" iyy="0.0017964159481" iyz="0.0" izz="0.00264954060685"/>
+    </inertial>
+  </link>
+
+
+
+
+  <!-- Jaco arm and Mounting poles -->
+
+    <joint name="marvin_pole_link_to_marvin_horizontal_pole_for_arm_joint" type="fixed">
+      <parent link="marvin_pole_link"/>
+      <child link="marvin_horizontal_pole_for_arm_link"/>
+      <origin rpy="0 1.57079632679 -1.57079632679" xyz="0 -0.092 0.2275"/>
+    </joint>
+    <link name="marvin_horizontal_pole_for_arm_link">
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.04 0.144"/>
+        </geometry>
+        <material name="grey"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.04 0.144"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.2"/>
+        <origin xyz="0 0 0"/>
+        <inertia ixx="0.00037226651776" ixy="0.0" ixz="0.0" iyy="0.00037226651776" iyz="0.0" izz="5.3333312e-05"/>
+      </inertial>
+    </link>
+
+    <joint name="marvin_horizontal_pole_for_arm_to_jaco_mounting_pole_joint" type="fixed">
+      <parent link="marvin_horizontal_pole_for_arm_link"/>
+      <child link="jaco_mounting_pole_link"/>
+      <origin rpy="1.57079632679 -3.14159265359 1.57079632679" xyz="0.08 0 0.052"/>
+    </joint>
+    <link name="jaco_mounting_pole_link">
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.04 0.12"/>
+        </geometry>
+        <material name="grey"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.04 0.12"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.2"/>
+        <origin xyz="0 0 0"/>
+        <inertia ixx="0.00026666656" ixy="0.0" ixz="0.0" iyy="0.00026666656" iyz="0.0" izz="5.3333312e-05"/>
+      </inertial>
+    </link>
+
+    <!-- **************************** -->
+    <!-- *** Jaco Arm *** -->
+    <!-- **************************** -->
+   <!-- <link name="jaco2_link_base">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="0.1"/>
+        <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_base.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_base.dae"/>
+        </geometry>
+      </collision>
+    </link> -->
+    <!-- Separate joint definition for base to avoid creating a transmission
+               on fixed joint.
+          -->
+    <!-- <joint name="jaco2_joint_base" type="fixed">
+      <parent link="jaco_mounting_pole_compensated"/>
+      <child link="jaco2_link_base"/>
+      <axis xyz="0 0 0"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
+    <link name="jaco2_link_1">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0692 0.0001 -0.0103"/>
+        <mass value="0.748"/>
+        <inertia ixx="0.0102" ixy="-5.21e-07" ixz="-0.00212" iyy="0.0325" iyz="-4.14e-07" izz="0.0354"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_1.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_1.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_1">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_1" type="revolute">
+      <parent link="jaco2_link_base"/>
+      <child link="jaco2_link_1"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-0.5" upper="1.8" velocity="0.35"/>
+      <origin rpy="3.14159265359 0 0" xyz="0 0 0.1535"/>
+    </joint>
+    <transmission name="jaco2_joint_1_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_1">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_1_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_2">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.2052 0.0000 0.0223"/>
+        <mass value="1.011"/>
+        <inertia ixx="0.0379" ixy="0.0" ixz="0.0" iyy="0.0373" iyz="-5.9e-06" izz="0.00698"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_2.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_2.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_2">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_2" type="revolute">
+      <parent link="jaco2_link_1"/>
+      <child link="jaco2_link_2"/>
+      <axis xyz="0 0 1"/>
+      <limit effort="30" lower="-2.1" upper="2.1" velocity="0.35"/>
+      <origin rpy="-1.57079632679 1.57079632679 0" xyz="0 0 -0.1185"/>
+    </joint>
+    <transmission name="jaco2_joint_2_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_2">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_2_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_3">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0196 0.0000 0.0644"/>
+        <mass value="0.568"/>
+        <inertia ixx="0.0511" ixy="1.92e-07" ixz="-2.67e-07" iyy="0.0144" iyz="-9.59e-05" izz="0.0129"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_3.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_3.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_3">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_3" type="revolute">
+      <parent link="jaco2_link_2"/>
+      <child link="jaco2_link_3"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-2.57079632679" upper="2.57079632679" velocity="0.35"/>
+      <origin rpy="3.14159265359 0 0" xyz="0.41 0 0"/>
+    </joint>
+    <transmission name="jaco2_joint_3_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_3">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_3_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_4">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0086 0.0000 -0.0374"/>
+        <mass value="0.427"/>
+        <inertia ixx="0.00246" ixy="0.000833" ixz="3.35e-08" iyy="0.00342" iyz="3.4e-08" izz="0.00363"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_4.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_4.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_4">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_4" type="continuous">
+      <parent link="jaco2_link_3"/>
+      <child link="jaco2_link_4"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-3.14159265359" upper="3.14159265359" velocity="0.35"/>
+      <origin rpy="3.14159265359 1.57079632679 0" xyz="0.207 0 -0.01125"/>
+    </joint>
+    <transmission name="jaco2_joint_4_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_4">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_4_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_5">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0086 0.0000 -0.0374"/>
+        <mass value="0.427"/>
+        <inertia ixx="0.00246" ixy="0.000833" ixz="3.35e-08" iyy="0.00342" iyz="3.4e-08" izz="0.00363"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_5.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_5.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_5">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_5" type="continuous">
+      <parent link="jaco2_link_4"/>
+      <child link="jaco2_link_5"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-3.14159265359" upper="3.14159265359" velocity="0.35"/>
+      <origin rpy="0 -1.0471975512 0" xyz="0.03700 0 -0.06408"/>
+    </joint>
+    <transmission name="jaco2_joint_5_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_5">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_5_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission> -->
+    <!-- dummy link for attaching the gripper needed for moveit to
+  		disable collisions of hand with attached objects -->
+    <!-- <link name="jaco2_link_gripper_mount"/>
+    <joint name="jaco2_joint_6" type="continuous">
+      <parent link="jaco2_link_5"/>
+      <child link="jaco2_link_gripper_mount"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-6.28318530718" upper="6.28318530718" velocity="0.35"/>
+      <origin rpy="-1.0471975512 0 1.57079632679" xyz="0.03700 0 -0.06408"/>
+    </joint>
+    <transmission name="jaco2_joint_6_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_6">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_6_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_hand">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0068 0.0000 -0.0822"/>
+        <mass value="0.127"/>
+        <inertia ixx="0.00466" ixy="0.000413" ixz="-1.05e-05" iyy="0.00265" iyz="-3.24e-06" izz="0.00525"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_hand.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_hand.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_hand">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_hand" type="fixed">
+      <parent link="jaco2_link_gripper_mount"/>
+      <child link="jaco2_link_hand"/>
+      <origin rpy="0 0 1.57079632679" xyz="0 0 0"/>
+    </joint>
+    <joint name="jaco2_link_hand_to_end_effector" type="fixed">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_end_effector"/>
+      <origin rpy="0 3.14159265359 0" xyz="0 0 -0.1687"/>
+    </joint>
+    <link name="jaco2_end_effector"/>
+    <joint name="jaco2_link_base_to_api_origin" type="fixed">
+      <parent link="jaco2_link_base"/>
+      <child link="jaco2_api_origin"/>
+      <origin rpy="0 0 0" xyz="0 0 0.028"/>
+    </joint>
+    <link name="jaco2_api_origin"> -->
+      <!--
+           <visual>
+             <geometry>
+               <box xyz="0 0 0" size="0.1 0.1 0.1"/>
+             </geometry>
+           </visual>
+           <collision>
+             <geometry>
+               <box xyz="0 0 0" size="0.1 0.1 0.1"/>
+             </geometry>
+           </collision>
+           -->
+    <!-- </link>
+    <gazebo reference="jaco2_link_base">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+
+    <link name="jaco2_link_finger_1"> -->
+      <!-- Inertia included in the hand link -->
+      <!-- <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="0.010"/>
+        <inertia ixx="0.010" ixy="0" ixz="0" iyy="0.010" iyz="0" izz="0.010"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_1.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_1.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	<gazebo reference="jaco2_link_finger_1">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+  	<joint name="jaco2_joint_finger_1" type="revolute">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_link_finger_1"/>
+      <axis xyz="0 0 1"/>
+      <origin rpy="-1.57079632679 1.117 3.14159265359" xyz="-0.03978 0 -0.10071"/>
+      <limit effort="30" lower="0" upper="0.698131700798" velocity="5"/>
+    </joint>
+    <transmission name="jaco2_joint_finger_1_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_finger_1">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_finger_1_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_finger_2"> -->
+      <!-- Inertia included in the hand link -->
+      <!-- <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="0.010"/>
+        <inertia ixx="0.010" ixy="0" ixz="0" iyy="0.010" iyz="0" izz="0.010"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_2.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_2.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	<gazebo reference="jaco2_link_finger_2">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_finger_2" type="revolute">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_link_finger_2"/>
+      <axis xyz="0 0 1"/>
+      <origin rpy="1.57079632679 2.02459265359 3.14159265359" xyz="0.03569 0 -0.10071"/>
+      <limit effort="30" lower="0" upper="0.698131700798" velocity="5"/>
+    </joint>
+    <transmission name="jaco2_joint_finger_2_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_finger_2">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_finger_2_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+ -->
+
+    <!--calibration joint
+    this is the place to change the orientation of the jaco arm relative to the jaco mounting pole
+    to compensate for differences between the hardware and the model-->
+    <!-- this is actually a fixed joint but exposed as a 6 dof joint to allow the mutable joint state publisher
+    of industrial calibration to alter this joint. use this for the arme here.
+    <xacro:calibration_definitions child_link="ptu_base_link" parent_link="marvin_horizontal_pole_for_sensors_link" />-->
+    <!-- <joint name="marvin_mounting_pole_jaco_base_joint" type="fixed" xmlns:xacro="http://ros.org/wiki/xacro">
+      <parent link="jaco_mounting_pole_link"/>
+      <child link="jaco_mounting_pole_compensated"/>
+      <origin rpy="0 0 0" xyz="0 0 0.004"/>
+    </joint>
+    <link name="jaco_mounting_pole_compensated"/>
+    <joint name="jaco2_gripper_tool_frame_joint" type="fixed">
+      <parent link="jaco2_link_gripper_mount"/>
+      <child link="jaco2_gripper_tool_frame"/>
+      <origin rpy="-1.57079632679 1.57079632679 1.57079632679" xyz="0 0 -0.1"/>
+    </joint>
+    <link name="jaco2_gripper_tool_frame"> -->
+      <!-- This is the coordinate system of the tool (this is the position
+  	     used in IK etc., relative to the base frame); there is no actual
+  	     arm part attached to this link-->
+      <!--this visual and collision are a workaround for moveit
+        not considreing an object for collision checks if it is attached to a link with no collision defined.
+        Here it is a small box inside the gripper to avoid actual collisions.-->
+      <!-- <visual>
+        <origin rpy="0 0 0" xyz="-0.05 0 0"/>
+        <geometry>
+          <box size="0.001 0.001 0.001"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="-0.05 0 0"/>
+        <geometry>
+          <box size="0.001 0.001 0.001"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="calibration_pattern_joint" type="fixed">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_calibration_pattern"/> -->
+      <!-- settings for kinect calibration -->
+      <!-- <origin rpy="-1.57079632679 3.14159265359 0" xyz="0 0.0344 -0.157"/> -->
+      <!-- settings for rgb_camera calibration is rotated by -90 degree around z axis in marker frame relative to the
+      kinect position
+      (Alvar detects the markers orientation 90 degrees rotated compared to the Kinect detection.)
+      <origin xyz="0 0.0344 -0.046" rpy="${-M_PI/2} 0 0"/>-->
+    <!-- </joint>
+    <link name="jaco2_calibration_pattern"> -->
+      <!--
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.055 0.055 0.001" />
+      </geometry>
+
+      <material name="black">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+    -->
+    <!-- </link> -->
+    <!-- **************************** -->
+    <!-- *** Jaco Arm *** -->
+    <!-- **************************** -->
+   <link name="jaco2_link_base">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="0.1"/>
+        <inertia ixx="0.1" ixy="0.0" ixz="0.0" iyy="0.1" iyz="0.0" izz="0.1"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_base.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_base.dae"/>
+        </geometry>
+      </collision>
+    </link>
+    <!-- Separate joint definition for base to avoid creating a transmission
+               on fixed joint.
+          -->
+    <joint name="jaco2_joint_base" type="fixed">
+      <parent link="jaco_mounting_pole_compensated"/>
+      <child link="jaco2_link_base"/>
+      <axis xyz="0 0 0"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
+    <link name="jaco2_link_1">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0692 0.0001 -0.0103"/>
+        <mass value="0.748"/>
+        <inertia ixx="0.0102" ixy="-5.21e-07" ixz="-0.00212" iyy="0.0325" iyz="-4.14e-07" izz="0.0354"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_1.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_1.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_1">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_1" type="revolute">
+      <parent link="jaco2_link_base"/>
+      <child link="jaco2_link_1"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-0.5" upper="1.8" velocity="0.35"/>
+      <origin rpy="3.14159265359 0 0" xyz="0 0 0.1535"/>
+    </joint>
+    <transmission name="jaco2_joint_1_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_1">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_1_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_2">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.2052 0.0000 0.0223"/>
+        <mass value="1.011"/>
+        <inertia ixx="0.0379" ixy="0.0" ixz="0.0" iyy="0.0373" iyz="-5.9e-06" izz="0.00698"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_2.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_2.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_2">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_2" type="revolute">
+      <parent link="jaco2_link_1"/>
+      <child link="jaco2_link_2"/>
+      <axis xyz="0 0 1"/>
+      <limit effort="30" lower="-2.1" upper="2.1" velocity="0.35"/>
+      <origin rpy="-1.57079632679 1.57079632679 0" xyz="0 0 -0.1185"/>
+    </joint>
+    <transmission name="jaco2_joint_2_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_2">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_2_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_3">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0196 0.0000 0.0644"/>
+        <mass value="0.568"/>
+        <inertia ixx="0.0511" ixy="1.92e-07" ixz="-2.67e-07" iyy="0.0144" iyz="-9.59e-05" izz="0.0129"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_3.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_3.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_3">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_3" type="revolute">
+      <parent link="jaco2_link_2"/>
+      <child link="jaco2_link_3"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-2.57079632679" upper="2.57079632679" velocity="0.35"/>
+      <origin rpy="3.14159265359 0 0" xyz="0.41 0 0"/>
+    </joint>
+    <transmission name="jaco2_joint_3_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_3">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_3_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_4">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0086 0.0000 -0.0374"/>
+        <mass value="0.427"/>
+        <inertia ixx="0.00246" ixy="0.000833" ixz="3.35e-08" iyy="0.00342" iyz="3.4e-08" izz="0.00363"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_4.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_4.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_4">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_4" type="continuous">
+      <parent link="jaco2_link_3"/>
+      <child link="jaco2_link_4"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-3.14159265359" upper="3.14159265359" velocity="0.35"/>
+      <origin rpy="3.14159265359 1.57079632679 0" xyz="0.207 0 -0.01125"/>
+    </joint>
+    <transmission name="jaco2_joint_4_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_4">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_4_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_5">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0086 0.0000 -0.0374"/>
+        <mass value="0.427"/>
+        <inertia ixx="0.00246" ixy="0.000833" ixz="3.35e-08" iyy="0.00342" iyz="3.4e-08" izz="0.00363"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_5.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_5.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_5">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_5" type="continuous">
+      <parent link="jaco2_link_4"/>
+      <child link="jaco2_link_5"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-3.14159265359" upper="3.14159265359" velocity="0.35"/>
+      <origin rpy="0 -1.0471975512 0" xyz="0.03700 0 -0.06408"/>
+    </joint>
+    <transmission name="jaco2_joint_5_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_5">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_5_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <!-- dummy link for attaching the gripper needed for moveit to
+  		disable collisions of hand with attached objects -->
+    <link name="jaco2_link_gripper_mount"/>
+    <joint name="jaco2_joint_6" type="continuous">
+      <parent link="jaco2_link_5"/>
+      <child link="jaco2_link_gripper_mount"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="30" lower="-6.28318530718" upper="6.28318530718" velocity="0.35"/>
+      <origin rpy="-1.0471975512 0 1.57079632679" xyz="0.03700 0 -0.06408"/>
+    </joint>
+    <transmission name="jaco2_joint_6_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_6">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_6_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_hand">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0068 0.0000 -0.0822"/>
+        <mass value="0.127"/>
+        <inertia ixx="0.00466" ixy="0.000413" ixz="-1.05e-05" iyy="0.00265" iyz="-3.24e-06" izz="0.00525"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_hand.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_hand.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	 <gazebo reference="jaco2_link_hand">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_hand" type="fixed">
+      <parent link="jaco2_link_gripper_mount"/>
+      <child link="jaco2_link_hand"/>
+      <origin rpy="0 0 1.57079632679" xyz="0 0 0"/>
+    </joint>
+    <joint name="jaco2_link_hand_to_end_effector" type="fixed">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_end_effector"/>
+      <origin rpy="0 3.14159265359 0" xyz="0 0 -0.1687"/>
+    </joint>
+    <link name="jaco2_end_effector"/>
+    <joint name="jaco2_link_base_to_api_origin" type="fixed">
+      <parent link="jaco2_link_base"/>
+      <child link="jaco2_api_origin"/>
+      <origin rpy="0 0 0" xyz="0 0 0.028"/>
+    </joint>
+    <link name="jaco2_api_origin">
+      <!--
+           <visual>
+             <geometry>
+               <box xyz="0 0 0" size="0.1 0.1 0.1"/>
+             </geometry>
+           </visual>
+           <collision>
+             <geometry>
+               <box xyz="0 0 0" size="0.1 0.1 0.1"/>
+             </geometry>
+           </collision>
+           -->
+    </link>
+    <gazebo reference="jaco2_link_base">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+
+    <link name="jaco2_link_finger_1">
+      <!-- Inertia included in the hand link -->
+      <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="0.010"/>
+        <inertia ixx="0.010" ixy="0" ixz="0" iyy="0.010" iyz="0" izz="0.010"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_1.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_1.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	<gazebo reference="jaco2_link_finger_1">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+  	<joint name="jaco2_joint_finger_1" type="revolute">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_link_finger_1"/>
+      <axis xyz="0 0 1"/>
+      <origin rpy="-1.57079632679 1.117 3.14159265359" xyz="-0.03978 0 -0.10071"/>
+      <limit effort="30" lower="0" upper="0.698131700798" velocity="5"/>
+    </joint>
+    <transmission name="jaco2_joint_finger_1_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_finger_1">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_finger_1_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+    <link name="jaco2_link_finger_2">
+      <!-- Inertia included in the hand link -->
+      <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="0.010"/>
+        <inertia ixx="0.010" ixy="0" ixz="0" iyy="0.010" iyz="0" izz="0.010"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_2.dae"/>
+        </geometry>
+        <material name="carbon_fiber">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://kinova_description/meshes/jaco2_link_finger_2.dae"/>
+        </geometry>
+      </collision>
+    </link>
+  	<gazebo reference="jaco2_link_finger_2">
+      <material value=" Gazebo/Grey" />
+      <turnGravityOff>true</turnGravityOff>
+    </gazebo>
+    <joint name="jaco2_joint_finger_2" type="revolute">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_link_finger_2"/>
+      <axis xyz="0 0 1"/>
+      <origin rpy="1.57079632679 2.02459265359 3.14159265359" xyz="0.03569 0 -0.10071"/>
+      <limit effort="30" lower="0" upper="0.698131700798" velocity="5"/>
+    </joint>
+    <transmission name="jaco2_joint_finger_2_trans">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="jaco2_joint_finger_2">
+        <hardwareInterface>hardware_interface/EffortJointInterface</hardwareInterface>
+      </joint>
+      <actuator name="jaco2_joint_finger_2_motor">
+        <mechanicalReduction>1.0</mechanicalReduction>
+      </actuator>
+    </transmission>
+
+
+    <!--calibration joint
+    this is the place to change the orientation of the jaco arm relative to the jaco mounting pole
+    to compensate for differences between the hardware and the model-->
+    <!-- this is actually a fixed joint but exposed as a 6 dof joint to allow the mutable joint state publisher
+    of industrial calibration to alter this joint. use this for the arme here.
+    <xacro:calibration_definitions child_link="ptu_base_link" parent_link="marvin_horizontal_pole_for_sensors_link" />-->
+    <joint name="marvin_mounting_pole_jaco_base_joint" type="fixed" xmlns:xacro="http://ros.org/wiki/xacro">
+      <parent link="jaco_mounting_pole_link"/>
+      <child link="jaco_mounting_pole_compensated"/>
+      <origin rpy="0 0 0" xyz="0 0 0.004"/>
+    </joint>
+    <link name="jaco_mounting_pole_compensated"/>
+    <joint name="jaco2_gripper_tool_frame_joint" type="fixed">
+      <parent link="jaco2_link_gripper_mount"/>
+      <child link="jaco2_gripper_tool_frame"/>
+      <origin rpy="-1.57079632679 1.57079632679 1.57079632679" xyz="0 0 -0.1"/>
+    </joint>
+    <link name="jaco2_gripper_tool_frame">
+      <!-- This is the coordinate system of the tool (this is the position
+  	     used in IK etc., relative to the base frame); there is no actual
+  	     arm part attached to this link-->
+      <!--this visual and collision are a workaround for moveit
+        not considreing an object for collision checks if it is attached to a link with no collision defined.
+        Here it is a small box inside the gripper to avoid actual collisions.-->
+      <visual>
+        <origin rpy="0 0 0" xyz="-0.05 0 0"/>
+        <geometry>
+          <box size="0.001 0.001 0.001"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="-0.05 0 0"/>
+        <geometry>
+          <box size="0.001 0.001 0.001"/>
+        </geometry>
+      </collision>
+    </link>radius
+    <joint name="calibration_pattern_joint" type="fixed">
+      <parent link="jaco2_link_hand"/>
+      <child link="jaco2_calibration_pattern"/>
+      <!-- settings for kinect calibration -->
+      <origin rpy="-1.57079632679 3.14159265359 0" xyz="0 0.0344 -0.157"/>
+      <!-- settings for rgb_camera calibration is rotated by -90 degree around z axis in marker frame relative to the
+      kinect position
+      (Alvar detects the markers orientation 90 degrees rotated compared to the Kinect detection.)
+      <origin xyz="0 0.0344 -0.046" rpy="${-M_PI/2} 0 0"/>-->
+    </joint>
+    <link name="jaco2_calibration_pattern">
+      <!--
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.055 0.055 0.001" />
+      </geometry>
+
+      <material name="black">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+    -->
+    </link>
+
+    <!-- ************************ -->
+    <!-- *** Laserscanner *** -->
+    <!-- ************************ -->
+    <joint name="laser_top_joint" type="fixed">
+      <origin rpy="0 0 3.11" xyz="-0.1 0 0.7175"/>
+      <parent link="linear_actuator_pole_link"/>
+      <child link="laser_top_link"/>
+    </joint>
+    <link name="laser_top_link">
+       <visual>
+        <origin rpy="1.57075 0 0" xyz="-0.025 0.025 -0.035"/>
+        <geometry>
+          <mesh filename="package://marvin_description/meshes/laser_2.stl"/>
+        </geometry>
+        <material name="Grey">
+          <color rgba="0.5 0.5 0.5 1"/>
+        </material>
+      </visual>
+    </link>
+     <!-- Laser on the Front Right of the Marvin Hukoyu 180Deg -->
+    <joint name="laser_bottom_joint" type="fixed">
+      <origin rpy="0 0 0.11" xyz="0.165 -0.165 -0.49"/>
+      <parent link="linear_actuator_pole_link"/>
+      <child link="laser_bottom_link"/>
+    </joint>
+    <link name="laser_bottom_link">
+       <visual>
+        <origin rpy="1.57075 0 0" xyz="-0.025 0.025 -0.035"/>
+        <geometry>
+          <mesh filename="package://marvin_description/meshes/laser.stl"/>
+        </geometry>
+        <material name="Grey">
+          <color rgba="0.5 0.5 0.5 1"/>
+        </material>
+      </visual>
+    </link>
+
+
+    <!-- ************************ -->
+    <!-- ********* PTU ********** -->
+    <!-- ************************ -->
+    <ptu_d46 name="ptu" />
+    <joint name="marvin_horizontal_pole_to_ptu_joint" type="fixed">
+      <parent link="marvin_horizontal_pole_for_sensors_link"/>
+      <child link="ptu_base_link"/>
+      <!-- old calibration -->
+      <!--<xacro:include filename="$(find marvin_arm_to_kinect_calibration)/calibration_output/ptu_base_link_pose.urdf.xacro" />-->
+      <origin rpy="0.0 0.0 0.0" xyz="0.034 0.0 0.017"/>
+    </joint>
+    <!--<xacro:include filename="$(find marvin_description)/urdf/openni.gazebo.xacro" />-->
+    <!-- base link -->
+    <joint name = "ptu_to_kinect" type = "fixed">
+    <parent link = "ptu_mount_link"/>
+    <child link = "kinect_link"/>
+    <origin xyz = "0.0 0 0.0" rpy = "0 0 0"/>
+    </joint>
+
+    <link name = "kinect_link">
+    <visual>
+      <geometry>
+        <mesh filename = "package://marvin_description/meshes/kinectlink.stl"/>
+      </geometry>
+      <origin xyz="0.015 0.029 -0.039" rpy="-1.57079635 3.14 1.57079635"/>
+      <material name = "Black"/>
+    </visual>
+      <collision>
+      <geometry>
+        <mesh filename = "package://marvin_description/meshes/kinectlink.stl"/>
+      </geometry>
+      <origin xyz="0.015 0.029 -0.039" rpy="-1.57079635 3.14 1.57079635"/>
+    </collision>
+      <inertial>
+          <mass value="0.001"/>
+          <origin rpy="0 0 0" xyz="0 0 0"/>
+          <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+      </inertial>
+    </link>
+
+    <!--Kinect 1 -->
+
+    <material name="Kinect2Grey">
+      <color rgba="0.15 0.15 0.15 1.0"/>
+    </material>
+    <!-- Joint connecting the parent to our frame_in -->
+    <joint name="head_kinect2_in_joint" type="fixed">
+      <origin rpy="-1.57079632679 0.02 -1.54079632679" xyz="0.015 -0.1 0.025"/>
+      <parent link="kinect_link"/>
+      <child link="head_kinect2_rgb_optical_frame"/>
+    </joint>
+    <link name="head_kinect2_rgb_optical_frame">
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <!-- these meshes were exported in mm, so scale back to m -->
+          <mesh filename="package://marvin_description/meshes/kinect2/kinect2_origin_on_rgb_optical_frame.stl" scale="0.001 0.001 0.001"/>
+        </geometry>
+        <material name="Kinect2Grey"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="package://marvin_description/meshes/kinect2/kinect2_origin_on_rgb_optical_frame.stl" scale="0.001 0.001 0.001"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!--Kinect 2 Asus Xtion -->
+
+
+    <joint name="camera_joint" type="fixed">
+      <origin rpy="-3.14 -1.5708 -1.5708" xyz="-0.10 -0.032 0"/>
+      <parent link="head_kinect2_rgb_optical_frame"/>
+      <child link="camera_link"/>
+    </joint>
+    <link name="camera_link">
+      <inertial>
+        <mass value="0.01"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="package://marvin_description/meshes/xtion/asus_xtion_pro_live.dae"/>
+        </geometry>
+        <material name="Grey">
+          <color rgba="0.5 0.5 0.5 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="-0.02 0.0025 0"/>
+        <!--TODO: Tune x coordinate. In Gazebo 1.0.2 collision geom conflicts with RGBD sensor, WTF?!-->
+        <geometry>
+          <box size="0.04 0.185 0.03"/>
+        </geometry>
+      </collision>
+    </link>
+    <!-- Xtion IR sensor physical attachment -->
+    <joint name="camera_ir_joint" type="fixed">
+      <!-- This relates the IR sensor to the Xtion base link -->
+      <!-- 4.8 cm because sensors are offset to right, from center -->
+      <origin rpy="0 0 0" xyz="0 0.048 0"/>
+      <parent link="camera_link"/>
+      <child link="camera_ir_link"/>
+    </joint>
+    <link name="camera_ir_link">
+      <!-- This link is the reference for the IR sensor in Gazebo, so it has inertia properties -->
+      <inertial>
+        <mass value="0.01"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
+      </inertial>
+    </link>
+    <!-- Xtion IR sensor frame -->
+    <joint name="camera_ir_optical_frame_joint" type="fixed">
+      <origin rpy="-1.57079632679 0 -1.57079632679" xyz="0 0 0"/>
+      <!-- macro argument -->
+      <parent link="camera_ir_link"/>
+      <child link="camera_ir_optical_frame"/>
+    </joint>
+    <link name="camera_ir_optical_frame">
+      <inertial>
+        <mass value="0.01"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
+      </inertial>
+    </link>
+    <!-- OpenNI IR sensor Gazebo extensions
+      <xacro:openni_ir_gazebo_v0 link_name="${name}_ir_link" frame_name="${name}_ir_optical_frame" camera_name="${name}" />-->
+    <!-- Xtion RGB sensor physical attachment -->
+    <joint name="camera_rgb_joint" type="fixed">
+      <!-- The measured distance from RGB lens back to IR lens, approx 2.5cm, but PR2 is using 3.0cm -->
+      <origin rpy="0 0 0" xyz="0 -0.025 0"/>
+      <parent link="camera_link"/>
+      <child link="camera_rgb_link"/>
+    </joint>
+    <link name="camera_rgb_link">
+      <!-- This link is the reference for the RGB sensor in Gazebo, so it has inertia properties -->
+      <inertial>
+        <mass value="0.01"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
+      </inertial>
+    </link>
+    <!-- Xtion RGB sensor frame -->
+    <joint name="camera_rgb_optical_frame_joint" type="fixed">
+      <origin rpy="-1.57079632679 0 -1.57079632679" xyz="0 0 0"/>
+      <!-- macro argument -->
+      <parent link="camera_rgb_link"/>
+      <child link="camera_rgb_optical_frame"/>
+    </joint>
+    <link name="camera_rgb_optical_frame">
+      <inertial>
+        <mass value="0.01"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0" ixy="0.0" ixz="0.0" iyy="0.0" iyz="0.0" izz="0.0"/>
+      </inertial>
+    </link>
+    <!-- OpenNI RGB sensor Gazebo extensions
+      <xacro:openni_rgb_gazebo_v0 link_name="${name}_rgb_link" frame_name="${name}_rgb_optical_frame" camera_name="${name}" />-->
+
+    <!-- ************************ -->
+    <!-- *** RGB Camera *** -->
+    <!-- ************************
+    <joint name="marvin_ptu_to_rgb_camera_joint" type="fixed" xmlns:xacro="http://ros.org/wiki/xacro">
+      <parent link="kinect_link"/>
+      <child link="rgb_camera"/>
+      <origin rpy="-1.553 -0.047 -1.606" xyz="0.000 0.078 -0.008"/>
+    </joint>
+    <link name="rgb_camera">
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.03 0.03 0.06"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.04 0.04 0.06"/>
+        </geometry>
+      </collision>
+    </link> -->
+    <!-- ************************ -->
+    <!-- *** Softkinect *** -->
+    <!-- ************************ -->
+    <joint name="softkinetic_camera_joint" type="fixed">
+      <parent link="linear_actuator_pole_link"/>
+      <child link="softkinetic_camera_link"/>
+      <origin rpy="0 0 3.1415926" xyz="-0.3715 0 0.1775"/>
+    </joint>
+    <link name="softkinetic_camera_link">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+
+    </link>
+    <gazebo reference="laser_top_link">
+      <sensor name="head_hokuyo_sensor" type="ray">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>true</visualize>
+        <update_rate>50</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.570796</min_angle>
+              <max_angle>1.570796</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.17</min>
+            <max>30.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </ray>
+        <plugin filename="libgazebo_ros_laser.so" name="gazebo_ros_head_hokuyo_controller">
+          <topicName>/scan_hukoyu</topicName>
+          <frameName>laser</frameName>
+        </plugin>
+      </sensor>
+    </gazebo>
+    <gazebo reference="laser_bottom_link">
+    <sensor name="head_hokuyo_sensor" type="ray">
+      <always_on>true</always_on>
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>true</visualize>
+      <update_rate>40</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-1.570796</min_angle>
+            <max_angle>1.570796</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.17</min>
+          <max>30.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin filename="libgazebo_ros_laser.so" name="gazebo_ros_head_hokuyo_controller">
+        <topicName>bottom/scan</topicName>
+        <frameName>laser</frameName>
+      </plugin>
+    </sensor>
+    </gazebo>
+
+
+    <joint name="camera_depth_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679 "/>
+      <parent link="camera_rgb_link"/>
+      <child link="camera_depth_link"/>
+    </joint>
+
+    <link name="camera_depth_link"></link>
+
+    <gazebo reference="camera_rgb_link">
+        <sensor type="depth" name="camera">
+          <always_on>true</always_on>
+          <update_rate>5</update_rate>
+          <camera>
+            <horizontal_fov>${60.0*3.14/180.0}</horizontal_fov>
+            <image>
+              <format>B8G8R8</format>
+              <width>640</width>
+              <height>480</height>
+            </image>
+            <clip>
+              <near>0.05</near>
+              <far>8.0</far>
+            </clip>
+          </camera>
+          <plugin name="kinect_camera_controller" filename="libgazebo_ros_openni_kinect.so">
+            <cameraName>camera</cameraName>
+            <alwaysOn>true</alwaysOn>
+            <updateRate>10</updateRate>
+            <imageTopicName>rgb/image_raw</imageTopicName>
+            <depthImageTopicName>depth/image_raw</depthImageTopicName>
+            <pointCloudTopicName>depth/points</pointCloudTopicName>
+            <cameraInfoTopicName>rgb/camera_info</cameraInfoTopicName>
+            <depthImageCameraInfoTopicName>depth/camera_info</depthImageCameraInfoTopicName>
+            <frameName>camera_depth_link</frameName>
+            <baseline>0.1</baseline>
+            <distortion_k1>0.0</distortion_k1>
+            <distortion_k2>0.0</distortion_k2>
+            <distortion_k3>0.0</distortion_k3>
+            <distortion_t1>0.0</distortion_t1>
+            <distortion_t2>0.0</distortion_t2>
+            <pointCloudCutoff>0.4</pointCloudCutoff>
+          </plugin>
+        </sensor>
+    </gazebo>
+
+
+    <!-- base_footprint is a fictitious link(frame) that is on the ground right below base_link origin,
+           navigation stack dedpends on this frame -->
+    <!-- <link name="base_footprint">
+          <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <box size="0.01 0.01 0.01"/>
+        </geometry>
+        <material name="Red"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0.05"/>
+        <geometry>
+          <box size="0.001 0.001 0.001"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="base_footprint_joint" type="fixed">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <child link="base_footprint"/>
+      <parent link="base_link"/>
+    </joint> -->
+    <joint name="base_laser_front_joint" type="fixed">
+      <axis xyz="0 1 0"/>
+      <origin rpy="0.0 0.0 0.0" xyz="0.2575 0.0 0.08"/>
+      <parent link="base_link"/>
+      <child link="base_laser_front_link"/>
+    </joint>
+    <link name="base_laser_front_link" type="laser">
+      <inertial>
+        <mass value="0.001"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.0001"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="package://mpo700_description/meshes/sensors/sick_s300_laser.dae"/>
+          <!--box size="0.001 0.001 0.001" /-->
+        </geometry>
+        <material name="IPA/LightGrey"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <cylinder length="0.09" radius="0.044"/>
+        </geometry>
+      </collision>
+    </link>
+    <gazebo reference="base_laser_front_link">
+      <sensor name="base_laser_front" type="ray">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>true</visualize>
+        <ray>
+          <scan>
+            <horizontal>  The sick 300 Laser is Converted into the 60+60 = 120 deg laser with 120 laser readings
+              <samples>120</samples>
+              <resolution>1.0</resolution>
+              <min_angle>-1.0467</min_angle>
+              <max_angle>1.0467</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>30.0</max>
+            <resolution>0.03</resolution>
+          </range>
+        </ray>
+        <plugin filename="libgazebo_ros_laser.so" name="gazebo_ros_base_laser_front_controller">
+          <gaussianNoise>0.005</gaussianNoise>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>10</updateRate>
+          <topicName>scan_front_raw</topicName>
+          <frameName>base_laser_front_link</frameName>
+        </plugin>
+      </sensor>
+      <!--material value="IPA/LightGrey" /-->
+    </gazebo>
+    <joint name="base_laser_rear_joint" type="fixed">
+      <axis xyz="0 1 0"/>
+      <origin rpy="0.0 0.0 3.142" xyz="-0.2575 0.0 0.08"/>
+      <parent link="base_link"/>
+      <child link="base_laser_rear_link"/>
+    </joint>
+    <link name="base_laser_rear_link" type="laser">
+      <inertial>
+        <mass value="0.001"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.0001"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="package://mpo700_description/meshes/sensors/sick_s300_laser.dae"/>
+          <!--box size="0.001 0.001 0.001" /-->
+        </geometry>
+        <material name="IPA/LightGrey"/>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <cylinder length="0.09" radius="0.044"/>
+        </geometry>
+      </collision>
+    </link>
+     <gazebo reference="base_laser_rear_link">
+      <sensor name="base_laser_rear" type="ray">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>true</visualize>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>120</samples>
+              <resolution>1.0</resolution>
+              <min_angle>-1.0467</min_angle>
+              <max_angle>1.0467</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>30.0</max>
+            <resolution>0.03</resolution>
+          </range>
+        </ray>
+        <plugin filename="libgazebo_ros_laser.so" name="gazebo_ros_base_laser_front_controller">
+          <gaussianNoise>0.005</gaussianNoise>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>10</updateRate>
+          <topicName>scan_rear_raw</topicName>
+          <frameName>base_laser_front_link</frameName>
+        </plugin>
+      </sensor>
+      <!--material value="IPA/LightGrey" /-->
+    </gazebo>
+</robot>

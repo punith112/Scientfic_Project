@@ -1,0 +1,11 @@
+moveit_setup_assistant_config:
+  URDF:
+    package: marvin_sim
+    relative_path: urdf/marvin.urdf.xacro
+    xacro_args: "--inorder "
+  SRDF:
+    relative_path: config/marvin.srdf
+  CONFIG:
+    author_name: punith
+    author_email: punithraj111@gmail.com
+    generated_timestamp: 1544127346

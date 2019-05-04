@@ -1,0 +1,8 @@
+# Define the goal
+float64 input  # Specify which dishwasher we want to use
+---
+# Define the result
+float64 output
+---
+# Define a feedback message
+float64 data

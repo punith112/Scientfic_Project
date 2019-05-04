@@ -1,0 +1,20 @@
+controller_list:
+  - name: marvin/jaco2_controller
+    action_ns: follow_joint_trajectory
+    type: FollowJointTrajectory
+    default: true
+    joints:
+      - jaco2_joint_1
+      - jaco2_joint_2
+      - jaco2_joint_3
+      - jaco2_joint_4
+      - jaco2_joint_5
+      - jaco2_joint_6
+  # - name: hand_controller
+  #   action_ns: gripper_action
+  #   type: GripperCommand
+  #   default: true
+  #   parallel: true
+  #   joints:
+  #     - jaco2_joint_finger_1
+  #     - jaco2_joint_finger_2

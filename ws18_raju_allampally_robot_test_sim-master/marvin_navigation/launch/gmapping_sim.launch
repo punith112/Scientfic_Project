@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <remap from="scan" to="/scan/multi"/>
+  <!-- <arg name="use_fake_localization" default="true" /> -->
+  <!-- <node name="odom_pub" pkg="my_odom_publisher" type="odom.py" output="screen" /> -->
+  <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="odom_to_base_footprint" args="0 0 0.0178 0 0 0  /odom /base_footprint"/> -->
+    <!-- <node name="fake_localization" pkg="fake_localization" type="fake_localization" respawn="false" >
+      <param name="~base_frame_id" value="base_footprint" />
+      <remap from="scan" to="/scan/multi" />
+      <param name="use_map_topic"  value="map" />
+      <rosparam file="$(find marvin_navigation)/config/amcl.yaml" command="load" />
+   </node> -->
+   <!-- <arg     if="$(arg use_fake_localization)" name="odom_topic" value="base_pose_ground_truth" /> -->
+
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+	<remap from="scan" to="/scan/multi" />
+  <!-- <param name="use_map_topic"  value="map" />
+  <param name="~base_frame_id" value="base_footprint" /> -->
+        <rosparam file="$(find marvin_navigation)/config/gmapping.yaml" command="load" />
+  </node>
+
+  <node type="rviz" name="rviz" pkg="rviz" args="-d $(find marvin_navigation)/config/preloaded_config_gmapping.rviz" />
+
+</launch>

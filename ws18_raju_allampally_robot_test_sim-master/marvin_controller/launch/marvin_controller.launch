@@ -1,0 +1,35 @@
+<launch>
+  <arg name="sec_idle" default="1.0" />
+  <arg name="use_base_odom" default="true" />
+  <arg name="use_dynamixel_controller" default="true" />
+  <arg name="use_dummy" default="false" />
+
+  <!-- Debug Info -->
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value="" />
+  <arg     if="$(arg debug)" name="launch_prefix" value="gdb --ex run --args" />
+
+  <!-- Fire up dynamixel -->
+  <group if="$(arg use_dynamixel_controller)" >
+    <include file="$(find marvin_controller)/launch/marvin_dynamixel.launch">
+      <arg name="use_dummy" value="$(arg use_dummy)" />
+      <!-- Debug Info -->
+      <arg name="debug" value="$(arg debug)" />
+      <arg name="launch_prefix" value="$(arg launch_prefix)" />
+    </include>
+  </group>
+
+  <!-- Start the Base Controller -->
+  <include file="$(find marvin_controller)/launch/base_controller.launch">
+    <arg name="sec_idle" value="$(arg sec_idle)"/>
+    <arg name="use_base_odom" value="$(arg use_base_odom)" />
+  </include>
+
+  <!-- convert joint states to TF transforms for rviz, etc -->
+  <node name="robot_state_publisher" pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        respawn="false" output="screen">
+    <remap from="/joint_states" to="/marvin/joint_states" />
+  </node>
+
+</launch>

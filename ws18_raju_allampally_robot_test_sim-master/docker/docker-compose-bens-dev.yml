@@ -1,0 +1,38 @@
+version: '2'
+services:
+  iki-robot-sim:
+    image: 141.69.58.19:5000/iki/robot-sim:kinetic
+    environment:
+      ROS_IP: $ROS_IP
+      ROS_MASTER_URI: $ROS_MASTER_URI
+      WAIT_FOR_ROSCORE: 0
+      DISPLAY: :0
+      QT_X11_NO_MITSHM: '1'
+      PATH: /usr/local/nvidia/bin:${PATH}
+      LD_LIBRARY_PATH: /usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
+    privileged: true
+    devices:
+    - /dev/nvidia0
+    - /dev/nvidiactl
+    - /dev/nvidia-uvm
+
+    network_mode: host
+    volumes:
+      - /home/ben-s/catkin_ws/src/prj-iki-robotics/ros-smach:/root/catkin_ws/src/prj-iki-robotics/ros-smach
+      - /home/ben-s/git/stud/ws18_raju_allampally_robot_test_sim:/root/catkin_ws/src/prj-iki-robotics/ws18_raju_allampally_robot_test_sim
+      - /etc/localtime:/etc/localtime:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - $HOME/.Xauthority:/root/.Xauthority
+      - nvidia_driver_384.130:/usr/local/nvidia:ro
+
+    command: /bin/bash -c "
+            cd ~/catkin_ws/; catkin_make;source ~/catkin_ws/devel/setup.bash;
+            git config --global user.name \"Ben S\"; git config --global user.email \"staehle@hs-weingarten.de\";
+            tail -f /dev/null"
+            #roslaunch marvin_smach mainloop_norobot.launch"
+            #catkin_make --pkg marvin_smach digitalstrom_bridge;
+
+version: '2'
+volumes:
+  nvidia_driver_384.130:
+    external: true

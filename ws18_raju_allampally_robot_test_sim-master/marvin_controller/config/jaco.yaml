@@ -1,0 +1,74 @@
+marvin:
+  jaco2_controller:
+    type: effort_controllers/JointTrajectoryController
+
+    joints:
+        - jaco2_joint_1
+        - jaco2_joint_2
+        - jaco2_joint_3
+        - jaco2_joint_4
+        - jaco2_joint_5
+        - jaco2_joint_6
+
+    constraints:
+      jaco2_joint_1:
+        goal: 0.3
+        trajectory: 0.3
+      jaco2_joint_2:
+        goal: 0.3
+        trajectory: 0.3
+      jaco2_joint_3:
+        goal: 0.3
+        trajectory: 0.3
+      jaco2_joint_4:
+        goal: 0.3
+        trajectory: 0.3
+      jaco2_joint_5:
+        goal: 0.3
+        trajectory: 0.3
+      jaco2_joint_6:
+        goal: 0.3
+        trajectory: 0.3
+
+    gains:
+      jaco2_joint_1:
+        d: 0
+        i: 0
+        i_clamp: 10
+        p: 5000
+      jaco2_joint_2:
+        d: 0
+        i: 0
+        i_clamp: 10
+        p: 5000
+      jaco2_joint_3:
+        d: 0
+        i: 0
+        i_clamp: 10
+        p: 5000
+      jaco2_joint_4:
+        d: 0
+        i: 0
+        i_clamp: 10
+        p: 500
+      jaco2_joint_5:
+        d: 0
+        i: 0
+        i_clamp: 10
+        p: 200
+      jaco2_joint_6:
+        d: 0
+        i: 0
+        i_clamp: 10
+        p: 500
+
+  jaco2_gripper_controller:
+    type: effort_controllers/JointTrajectoryController
+
+    joints:
+        - jaco2_joint_finger_1
+        - jaco2_joint_finger_2
+
+    gains:
+        jaco2_joint_finger_1: {p: 100.0, d: 1.0}
+        jaco2_joint_finger_2: {p: 100.0, d: 1.0}

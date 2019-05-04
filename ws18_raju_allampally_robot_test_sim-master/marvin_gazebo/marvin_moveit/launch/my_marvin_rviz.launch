@@ -1,0 +1,27 @@
+<launch>
+  <rosparam command="load" file="$(find marvin_moveit)/config/controllers.yaml"/>
+  <arg name="config" default="true"/>
+  <arg name="rviz_config" default="$(find marvin_moveit)/launch/moveit.rviz" />
+
+  <include file="$(find marvin_moveit)/launch/planning_context.launch" >
+    <arg name="load_robot_description" value="true" />
+  </include>
+
+  <include file="$(find marvin_moveit)/launch/move_group.launch">
+    <arg name="allow_trajectory_execution" value="true" />
+    <arg name="fake_execution" value="false" />
+  </include>
+
+  <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+    <param name="/use_gui" value="false"/>
+    <rosparam param="/source_list">[/marvin/joint_states]</rosparam>
+  </node>
+
+
+  <include file="$(find marvin_moveit)/launch/moveit_rviz.launch">
+    <!-- <arg name="config" value="$(arg_config)"/>
+    <arg name="rviz_config" value="$(arg rviz_config)"/> -->
+    <arg name="config" value="true"/>
+  </include>
+
+</launch>

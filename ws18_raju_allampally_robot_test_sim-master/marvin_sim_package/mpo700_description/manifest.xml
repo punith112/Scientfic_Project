@@ -1,0 +1,17 @@
+<package>
+  <description brief="mpo700_description">
+
+     mpo700_description
+
+  </description>
+  <author>ben</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/mpo700_description</url>
+  <depend package="std_msgs"/>
+  <depend package="rospy"/>
+  <depend package="roscpp"/>
+
+</package>
+
+

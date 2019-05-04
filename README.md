@@ -21,8 +21,9 @@
 
 ## Authors
 - Benjamin Stähle - Main Contributor (docker) - @staehlbe
-- Rakesh Allampally - Main Contributor - @ra-171967
 - Punith Raju - Main Contributor - @pr-171989 
+- Rakesh Allampally - Main Contributor - @ra-171967
+
 
 ## License
 To be determined.
